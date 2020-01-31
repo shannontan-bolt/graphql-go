@@ -25,7 +25,7 @@ import (
 func ParseSchema(schemaString string, resolver interface{}, opts ...SchemaOpt) (*Schema, error) {
 	s := &Schema{
 		schema:           schema.New(),
-		maxParallelism:   1,
+		maxParallelism:   10,
 		tracer:           trace.OpenTracingTracer{},
 		validationTracer: trace.NoopValidationTracer{},
 		logger:           &log.DefaultLogger{},
