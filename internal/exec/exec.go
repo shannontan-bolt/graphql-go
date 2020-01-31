@@ -76,18 +76,22 @@ func (r *Request) execSelections(ctx context.Context, sels []selected.Selection,
 		var wg sync.WaitGroup
 		wg.Add(len(fields))
 		for _, f := range fields {
-			go func(f *fieldToExec) {
-				defer wg.Done()
-				defer r.handlePanic(ctx)
-				f.out = new(bytes.Buffer)
-				execFieldSelection(ctx, r, s, f, &pathSegment{path, f.field.Alias}, true)
-			}(f)
+			limitParallelism(r, func() {
+				go func(f *fieldToExec) {
+					defer wg.Done()
+					defer r.handlePanic(ctx)
+					f.out = new(bytes.Buffer)
+					execFieldSelection(ctx, r, s, f, &pathSegment{path, f.field.Alias})
+				}(f)
+			})
 		}
 		wg.Wait()
 	} else {
 		for _, f := range fields {
-			f.out = new(bytes.Buffer)
-			execFieldSelection(ctx, r, s, f, &pathSegment{path, f.field.Alias}, true)
+			limitParallelism(r, func() {
+				f.out = new(bytes.Buffer)
+				execFieldSelection(ctx, r, s, f, &pathSegment{path, f.field.Alias})
+			})
 		}
 	}
 
@@ -160,11 +164,13 @@ func typeOf(tf *selected.TypenameField, resolver reflect.Value) string {
 	return ""
 }
 
-func execFieldSelection(ctx context.Context, r *Request, s *resolvable.Schema, f *fieldToExec, path *pathSegment, applyLimiter bool) {
-	if applyLimiter {
-		r.Limiter <- struct{}{}
-	}
+func limitParallelism(r *Request, f func()) {
+	r.Limiter <- struct{}{}
+	f()
+	<- r.Limiter
+}
 
+func execFieldSelection(ctx context.Context, r *Request, s *resolvable.Schema, f *fieldToExec, path *pathSegment) {
 	var result reflect.Value
 	var err *errors.QueryError
 
@@ -221,11 +227,7 @@ func execFieldSelection(ctx context.Context, r *Request, s *resolvable.Schema, f
 		}
 		return nil
 	}()
-
-	if applyLimiter {
-		<-r.Limiter
-	}
-
+	
 	if err != nil {
 		// If an error occurred while resolving a field, it should be treated as though the field
 		// returned null, and an error must be added to the "errors" list in the response.
