@@ -76,22 +76,22 @@ func (r *Request) execSelections(ctx context.Context, sels []selected.Selection,
 		var wg sync.WaitGroup
 		wg.Add(len(fields))
 		for _, f := range fields {
-			limitParallelism(r, func() {
-				go func(f *fieldToExec) {
-					defer wg.Done()
-					defer r.handlePanic(ctx)
-					f.out = new(bytes.Buffer)
-					execFieldSelection(ctx, r, s, f, &pathSegment{path, f.field.Alias})
-				}(f)
-			})
+			r.Limiter <- struct{}{} // Don't create more go routines than could possibly be executed
+			go func(f *fieldToExec) {
+				defer wg.Done()
+				defer r.handlePanic(ctx)
+				f.out = new(bytes.Buffer)
+				execFieldSelection(ctx, r, s, f, &pathSegment{path, f.field.Alias})
+				<- r.Limiter
+			}(f)
 		}
 		wg.Wait()
 	} else {
 		for _, f := range fields {
-			limitParallelism(r, func() {
-				f.out = new(bytes.Buffer)
-				execFieldSelection(ctx, r, s, f, &pathSegment{path, f.field.Alias})
-			})
+			r.Limiter <- struct{}{}
+			f.out = new(bytes.Buffer)
+			execFieldSelection(ctx, r, s, f, &pathSegment{path, f.field.Alias})
+			<- r.Limiter
 		}
 	}
 
@@ -162,12 +162,6 @@ func typeOf(tf *selected.TypenameField, resolver reflect.Value) string {
 		}
 	}
 	return ""
-}
-
-func limitParallelism(r *Request, f func()) {
-	r.Limiter <- struct{}{}
-	f()
-	<- r.Limiter
 }
 
 func execFieldSelection(ctx context.Context, r *Request, s *resolvable.Schema, f *fieldToExec, path *pathSegment) {
