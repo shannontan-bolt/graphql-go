@@ -82,7 +82,7 @@ func (r *Request) execSelections(ctx context.Context, sels []selected.Selection,
 				defer r.handlePanic(ctx)
 				f.out = new(bytes.Buffer)
 				execFieldSelection(ctx, r, s, f, &pathSegment{path, f.field.Alias})
-				<- r.Limiter
+				<- r.Limiter // Execution complete here
 			}(f)
 		}
 		wg.Wait()
