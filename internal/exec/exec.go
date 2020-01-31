@@ -222,7 +222,6 @@ func execFieldSelection(ctx context.Context, r *Request, s *resolvable.Schema, f
 
 	// Practical execution of this goroutine is complete - all code below will hit the same recursive code path
 	// and therefore should be counted independently
-	fmt.Println("go routine completed")
 	<- r.Limiter
 
 	if err != nil {
