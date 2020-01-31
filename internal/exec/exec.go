@@ -74,24 +74,22 @@ func (r *Request) execSelections(ctx context.Context, sels []selected.Selection,
 
 	if async {
 		var wg sync.WaitGroup
-		wg.Add(len(fields))
 		for _, f := range fields {
-			r.Limiter <- struct{}{} // Don't create more go routines than could possibly be executed
+			wg.Add(1)
+			r.Limiter <- struct{}{} // Limit created goroutines to prevent reaching stack limits (N+1 problem)
 			go func(f *fieldToExec) {
 				defer wg.Done()
 				defer r.handlePanic(ctx)
 				f.out = new(bytes.Buffer)
 				execFieldSelection(ctx, r, s, f, &pathSegment{path, f.field.Alias})
-				<- r.Limiter // Execution complete here
 			}(f)
 		}
 		wg.Wait()
 	} else {
 		for _, f := range fields {
-			r.Limiter <- struct{}{}
 			f.out = new(bytes.Buffer)
+			r.Limiter <- struct{}{}
 			execFieldSelection(ctx, r, s, f, &pathSegment{path, f.field.Alias})
-			<- r.Limiter
 		}
 	}
 
@@ -221,7 +219,12 @@ func execFieldSelection(ctx context.Context, r *Request, s *resolvable.Schema, f
 		}
 		return nil
 	}()
-	
+
+	// Practical execution of this goroutine is complete - all code below will hit the same recursive code path
+	// and therefore should be counted independently
+	fmt.Println("go routine completed")
+	<- r.Limiter
+
 	if err != nil {
 		// If an error occurred while resolving a field, it should be treated as though the field
 		// returned null, and an error must be added to the "errors" list in the response.
